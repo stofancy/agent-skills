@@ -1,0 +1,6 @@
+interface:
+  display_name: "Team Lead"
+  short_description: "以技术负责人方式编排多模型团队交付复杂任务"
+  default_prompt: "Use $team-lead to organize this task as a multi-model engineering team."
+policy:
+  allow_implicit_invocation: false

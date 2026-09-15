@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "skill": "team-lead",
+  "comparison": "with-skill-vs-baseline",
+  "cases": [
+    {
+      "id": "complex-multi-module-coding",
+      "prompt": "$team-lead：在一个 TypeScript 单体仓库中，为订单取消流程增加幂等退款、审计事件和 API 契约测试。现有改动未提交，支付、订单和审计模块分别在不同目录，但退款接口与审计事件共享一个公共类型包。请组织团队完成，不要推送或部署。",
+      "assertions": [
+        { "id": "task-graph-after-code-contact", "expected": "先读取规则、现有改动和共享类型边界，再形成带依赖的 tickets。" },
+        { "id": "shared-boundary-write-coordination", "expected": "仅独立边界并行；共享公共类型写入串行或明确协调。" },
+        { "id": "bounded-centralized-fanout", "expected": "Lead 先写明有限 fan-out 预算并作为唯一派发者；worker 不得再派生代理。" },
+        { "id": "risk-proportional-independent-acceptance", "expected": "Builder 交付含基线、diff、命令和未验证项；高风险分离 Reviewer/Verifier，低风险不机械创建两个 worker。" },
+        { "id": "two-failure-circuit-breaker", "expected": "同一路由连续两次失败后记录熔断和替代路线。" }
+      ]
+    },
+    {
+      "id": "ui-implementation-visual-qa",
+      "prompt": "Let's rock：把现有 React 管理台的成员邀请页改成可访问的两步流程，支持移动端、邀请预览和失败重试。请先理解现有设计系统；不要为了并行而拆散同一个组件的实现，也不要发布。",
+      "assertions": [
+        { "id": "ui-context-first", "expected": "先勘探组件、设计系统、交互约束和现有测试。" },
+        { "id": "separate-ui-design-and-visual-qa", "expected": "按需使用 UI Designer，并安排独立 Visual QA。" },
+        { "id": "single-ui-writer", "expected": "同一页面/组件逻辑边界只有一个写入 Builder；只读工作仅在有收益时并行。" },
+        { "id": "ui-evidence-and-scope", "expected": "验收覆盖行为、可访问性与目标尺寸/状态；不引入无关 harness 或发布操作。" }
+      ]
+    },
+    {
+      "id": "system-configuration-investigation",
+      "prompt": "$team-lead：调查 CI 中偶发的数据库迁移超时。仓库有生产配置和开发配置，禁止修改、重置、提交、推送或连接生产环境。请给出可复现证据和最低风险修复建议；只有确有收益时才并行。",
+      "assertions": [
+        { "id": "read-only-investigation", "expected": "识别为只读调查，不强行启动 Builder。" },
+        { "id": "justified-read-only-parallelism", "expected": "Scout/Researcher 仅在互不重叠且有收益的范围并行。" },
+        { "id": "configuration-safety", "expected": "不读取或输出凭据，不连接生产，也不修改配置。" },
+        { "id": "evidence-and-no-fake-gate", "expected": "结论区分事实、推断、未知项和复现证据；无写入交付时不伪造 Reviewer/Verifier 流程。" },
+        { "id": "investigation-circuit-breaker", "expected": "provider/harness 两次等价失败后熔断并保留错误分类。" }
+      ]
+    },
+    {
+      "id": "lightweight-native-routing-and-escalation",
+      "prompt": "$team-lead：先快速确认当前仓库里是谁读取 FEATURE_GATE_X，并给出文件和调用点；如果发现它横跨多个服务、需要长时间追踪或修改代码，不要硬做，说明应升级到哪种通道与角色。",
+      "assertions": [
+        { "id": "lightweight-native-for-bounded-current-context-scouting", "expected": "仅在当前语境、低风险、只读且约 1–5 分钟的定位任务中使用宿主原生轻量子代理。" },
+        { "id": "lightweight-native-not-a-cheap-default", "expected": "不因问题短或文件少而默认轻量通道；安全、架构和高风险语义仍由相应强角色承担。" },
+        { "id": "escalation-to-isolated-channels", "expected": "跨模块、长时或需续接的只读调查升级到隔离侦查通道；需要写入时转构建通道。" },
+        { "id": "preserve-independent-gates", "expected": "轻量通道不替代 Reviewer、Advisor 或最终验收。" }
+      ]
+    }
+  ]
+}

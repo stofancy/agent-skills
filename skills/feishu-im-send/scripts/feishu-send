@@ -1,0 +1,401 @@
+#!/usr/bin/env python3
+"""feishu-send: 飞书群消息两阶段发送守卫。
+
+边界（按 plan 评估）：
+- LLM 负责：意图理解、text/markdown 选择、群消歧、确认判断、PR 表达。
+- 本脚本负责：对已解析 chat_id 的机械校验、payload 冻结、UUID/dry-run、
+  计划持久化、幂等 commit、重试限制、三条件成功判定。
+
+不负责：选群、生成/改写正文、决定格式、判断用户是否确认、选择 profile/身份。
+profile 由调用方经 --profile 传入或省略（省略则冻结当时 active），冻结值随计划在 commit 时复用。
+
+用法：
+  printf '%s' "$MSG" | feishu-send prepare --chat-id oc_xxx --identity user \
+    --content-format markdown --output json
+  feishu-send commit --plan-id <id> --expect-digest <sha256:...> --output json
+
+安全：内容走 stdin；argv 数组调 lark-cli，不用 shell=True/拼接；token 不落盘。
+"""
+import argparse, fcntl, hashlib, json, os, sys, subprocess, tempfile, time, uuid
+from pathlib import Path
+
+SCHEMA_VERSION = 1
+DEFAULT_TTL_SECONDS = 1800  # 30 分钟
+LARK_TIMEOUT_SECONDS = 30  # 每次 lark-cli 调用超时
+STATE_DIR = Path(os.environ.get("FEISHU_SEND_STATE_DIR", "~/.feishu-send")).expanduser()
+LARK_CLI = os.environ.get("FEISHU_SEND_LARK_CLI", "lark-cli")
+
+
+def _run_lark(args, stdin_text=None):
+    """argv 数组调用 lark-cli，返回 (exit_code, stdout_str, stderr_str)。不用 shell。"""
+    env = dict(os.environ)
+    env["LARKSUITE_CLI_NO_UPDATE_NOTIFIER"] = "1"
+    env["LARKSUITE_CLI_NO_SKILLS_NOTIFIER"] = "1"
+    try:
+        proc = subprocess.run(
+            [LARK_CLI, *args], input=stdin_text, capture_output=True, text=True, env=env,
+            timeout=LARK_TIMEOUT_SECONDS,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired as e:
+        return -1, "", f"lark-cli timed out after {LARK_TIMEOUT_SECONDS}s"
+    except FileNotFoundError:
+        return -2, "", f"lark-cli executable not found: {LARK_CLI} (set FEISHU_SEND_LARK_CLI or add to PATH)"
+
+
+def _profile_args(profile):
+    """profile 冻结进 plan 后，所有 lark 调用显式带 --profile，防 active 漂移。"""
+    return ["--profile", profile] if profile else []
+
+
+def _active_profile():
+    """解析当前 active profile 名（prepare 未显式传 --profile 时冻结用）。"""
+    rc, out, _ = _run_lark(["profile", "list"])
+    if rc != 0:
+        sys.exit("profile list failed; pass --profile explicitly")
+    try:
+        for p in json.loads(out):
+            if p.get("active"):
+                return p.get("name")
+    except (json.JSONDecodeError, TypeError):
+        pass
+    sys.exit("cannot determine active profile; pass --profile explicitly")
+
+
+def _confirmation_payload(plan):
+    """提取不可变确认字段（不含 status/attempts/message_id 等可变状态）。"""
+    return {
+        "schema_version": plan.get("schema_version"),
+        "plan_id": plan.get("plan_id"),
+        "receive_type": plan.get("receive_type"),
+        "receiver_id": plan.get("receiver_id"),
+        "receiver_name": plan.get("receiver_name"),
+        "identity": plan.get("identity"),
+        "profile": plan.get("profile"),
+        "content_format": plan.get("content_format"),
+        "content": plan.get("content"),
+        "idempotency_key": plan.get("idempotency_key"),
+    }
+
+
+def _digest(payload_obj):
+    """对 canonical JSON 的精确字节算 SHA-256。"""
+    canonical = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _load_plan(plan_id):
+    plan_file = STATE_DIR / f"{plan_id}.json"
+    if not plan_file.exists():
+        sys.exit(f"plan not found: {plan_id}")
+    try:
+        with open(plan_file, encoding="utf-8") as f:
+            return json.load(f), plan_file
+    except json.JSONDecodeError:
+        sys.exit(f"plan corrupt: {plan_id}")
+
+
+def _save_plan(plan, plan_file):
+    STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=STATE_DIR)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(plan, f, ensure_ascii=False, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, plan_file)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _cmd_prepare(args):
+    chat_id = args.chat_id
+    user_id = args.user_id
+    identity = args.identity
+    fmt = args.content_format
+    content = sys.stdin.read()  # 正文从 stdin，绝不进 argv/shell 源码
+    if not content.strip():
+        sys.exit("empty content")
+    if identity not in ("user", "bot"):
+        sys.exit("identity must be user|bot")
+    if fmt not in ("text", "markdown"):
+        sys.exit("content-format must be text|markdown")
+    if bool(chat_id) == bool(user_id):
+        sys.exit("exactly one of --chat-id or --user-id required")
+
+    profile = args.profile or _active_profile()
+
+    # 1) 接收方校验：chat 走 chats get，user 走 contact/解析
+    receive_type = None
+    receiver_id = None
+    chat_name = ""
+    if chat_id:
+        if not chat_id.startswith("oc_"):
+            sys.exit("chat_id must be oc_...")
+        receive_type = "chat"
+        receiver_id = chat_id
+        rc, out, err = _run_lark([
+            "im", "chats", "get", "--chat-id", chat_id, "--as", identity,
+            *_profile_args(profile),
+        ])
+        if rc != 0:
+            sys.exit(f"chats get failed (rc={rc}): {err.strip() or out.strip()}")
+        try:
+            chat = json.loads(out)["data"]
+        except (json.JSONDecodeError, KeyError):
+            sys.exit("chats get: unparseable response")
+        if chat.get("chat_status") != "normal":
+            sys.exit(f"chat not normal: {chat.get('chat_status')}")
+        chat_name = chat.get("name", "")
+    else:
+        if not user_id.startswith("ou_"):
+            sys.exit("user_id must be ou_...")
+        receive_type = "user"
+        receiver_id = user_id
+        # 校验用户 open_id 有效（contact 解析姓名）；身份与发送身份一致。
+        # 不假设某个 profile 的 user 凭据可用性。
+        rc, out, err = _run_lark([
+            "contact", "+get-user", "--user-id", user_id, "--as", identity,
+            *_profile_args(profile),
+        ])
+        if rc != 0:
+            sys.exit(f"user lookup failed (rc={rc}): {err.strip() or out.strip()}")
+        try:
+            person = json.loads(out).get("data", {})
+            chat_name = person.get("name") or person.get("user_name") or user_id
+        except json.JSONDecodeError:
+            chat_name = user_id
+
+    # 2) 冻结 payload + 生成 UUID
+    plan_id = uuid.uuid4().hex
+    idem_key = str(uuid.uuid4())
+    now = int(time.time())
+    plan = {
+        "schema_version": SCHEMA_VERSION,
+        "plan_id": plan_id,
+        "status": "prepared",
+        "created_at": now,
+        "expires_at": now + (args.ttl or DEFAULT_TTL_SECONDS),
+        "receive_type": receive_type,
+        "receiver_id": receiver_id,
+        "receiver_name": chat_name,
+        "identity": identity,
+        "profile": profile,
+        "content_format": fmt,
+        "content": content,
+        "idempotency_key": idem_key,
+        "send_attempts": 0,
+        "message_id": None,
+        "last_result": None,
+    }
+    confirmation_digest = _digest(_confirmation_payload(plan))
+
+    # 3) dry-run
+    flag = "--markdown" if fmt == "markdown" else "--text"
+    target_args = ["--user-id", receiver_id] if receive_type == "user" else ["--chat-id", receiver_id]
+    rc, out, err = _run_lark(
+        [
+            "im", "+messages-send",
+            *target_args,
+            "--as", identity,
+            *_profile_args(profile),
+            flag, content,
+            "--idempotency-key", idem_key,
+            "--dry-run", "--format", "json",
+        ]
+    )
+    if rc != 0:
+        sys.exit(f"dry-run failed (rc={rc}): {err.strip() or out.strip()}")
+
+    # 4) 原子保存计划（dry-run 成功才进入 prepared）
+    plan_file = STATE_DIR / f"{plan_id}.json"
+    _save_plan(plan, plan_file)
+
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "prepared",
+        "plan_id": plan_id,
+        "confirmation_digest": confirmation_digest,
+        "receiver": {"id": receiver_id, "name": chat_name, "type": receive_type},
+        "identity": identity,
+        "profile": profile,
+        "content_format": fmt,
+        "content": content,
+        "idempotency_key": idem_key,
+        "expires_at": plan["expires_at"],
+        "note": "dry-run 只校验请求形状，不证明 sender 在群内",
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_commit(args):
+    if not args.expect_digest:
+        sys.exit("--expect-digest is required (prevents referencing the wrong plan)")
+    plan, plan_file = _load_plan(args.plan_id)
+    now = int(time.time())
+
+    # sent 是终态：无论 TTL 与否都回放本地结果（不重发、不降级 expired）
+    if plan.get("status") == "sent":
+        print(json.dumps({"status": "sent", "message_id": plan.get("message_id"), "replayed": True},
+                         ensure_ascii=False))
+        return 0
+
+    if plan.get("schema_version") != SCHEMA_VERSION:
+        sys.exit("plan schema mismatch")
+    if now > plan.get("expires_at", 0):
+        _mark(plan, plan_file, "expired")
+        sys.exit("plan expired; re-prepare")
+    if plan.get("status") not in ("prepared", "unknown"):
+        sys.exit(f"plan in non-committable state: {plan.get('status')}")
+    if plan.get("send_attempts", 0) >= 2:
+        sys.exit("send attempts exhausted (max 2: initial + 1 retry); status unknown, do NOT blind-send with a new key")
+
+    # 真实排他锁：锁内重新读取，防止并发双 commit
+    lock_fd = os.open(str(plan_file), os.O_RDONLY)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        plan, plan_file = _load_plan(args.plan_id)  # 锁内重读最新状态
+        if plan.get("status") == "sent":
+            print(json.dumps({"status": "sent", "message_id": plan.get("message_id"), "replayed": True},
+                             ensure_ascii=False))
+            return 0
+        if plan.get("status") not in ("prepared", "unknown"):
+            sys.exit(f"plan in non-committable state after lock: {plan.get('status')}")
+        if plan.get("send_attempts", 0) >= 2:
+            sys.exit("send attempts exhausted (max 2: initial + 1 retry)")
+
+        # 防引用错计划：digest 锚点（只对不可变确认 payload 计算，unknown 后仍稳定）
+        actual = _digest(_confirmation_payload(plan))
+        if args.expect_digest != actual:
+            sys.exit(f"digest mismatch: plan was modified or wrong plan referenced (expected {args.expect_digest}, got {actual})")
+
+        _mark(plan, plan_file, "committing")
+        plan["send_attempts"] = plan.get("send_attempts", 0) + 1
+        _save_plan(plan, plan_file)
+
+        flag = "--markdown" if plan["content_format"] == "markdown" else "--text"
+        target_args = ["--user-id", plan["receiver_id"]] if plan["receive_type"] == "user" else ["--chat-id", plan["receiver_id"]]
+        rc, out, err = _run_lark(
+            [
+                "im", "+messages-send",
+                *target_args,
+                "--as", plan["identity"],
+                *_profile_args(plan.get("profile")),
+                flag, plan["content"],
+                "--idempotency-key", plan["idempotency_key"],
+                "--format", "json",
+            ]
+        )
+
+        # 三条件成功判定
+        ok = False
+        message_id = None
+        if rc == 0:
+            try:
+                resp = json.loads(out)
+                ok = resp.get("ok") is True and bool(resp.get("data", {}).get("message_id"))
+                message_id = resp.get("data", {}).get("message_id") if ok else None
+            except json.JSONDecodeError:
+                ok = False
+        if ok:
+            plan["status"] = "sent"
+            plan["message_id"] = message_id
+            _save_plan(plan, plan_file)
+            print(json.dumps({"status": "sent", "message_id": message_id, "receiver_name": plan.get("receiver_name")},
+                             ensure_ascii=False))
+            return 0
+        else:
+            # rc!=0 或响应不可解析：无法证明是否已发送（可能已成功但响应丢失/超时）
+            plan["status"] = "unknown"
+            plan["last_result"] = err.strip() or out.strip()
+            _save_plan(plan, plan_file)
+            print(json.dumps({"status": "unknown", "plan_id": args.plan_id,
+                              "note": "无法确认是否已发送；用原 idempotency-key 最多自动重试一次（send_attempts 上限 2），勿生成新 key",
+                              "idempotency_key": plan["idempotency_key"],
+                              "send_attempts": plan.get("send_attempts")}, ensure_ascii=False))
+            return 1
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
+
+    flag = "--markdown" if plan["content_format"] == "markdown" else "--text"
+    target_args = ["--user-id", plan["receiver_id"]] if plan["receive_type"] == "user" else ["--chat-id", plan["receiver_id"]]
+    rc, out, err = _run_lark(
+        [
+            "im", "+messages-send",
+            *target_args,
+            "--as", plan["identity"],
+            flag, plan["content"],
+            "--idempotency-key", plan["idempotency_key"],
+            "--format", "json",
+        ]
+    )
+
+    # 三条件成功判定
+    ok = False
+    message_id = None
+    if rc == 0:
+        try:
+            resp = json.loads(out)
+            ok = resp.get("ok") is True and bool(resp.get("data", {}).get("message_id"))
+            message_id = resp.get("data", {}).get("message_id") if ok else None
+        except json.JSONDecodeError:
+            ok = False
+    else:
+        # 非 0 退出：无法证明是否已发送（可能请求成功响应丢失）
+        plan["status"] = "unknown"
+        plan["last_result"] = err.strip() or out.strip()
+        _save_plan(plan, plan_file)
+        print(json.dumps({"status": "unknown", "plan_id": args.plan_id,
+                          "note": "无法确认是否已发送；用原 idempotency-key 最多自动重试一次，勿生成新 key",
+                          "idempotency_key": plan["idempotency_key"]}, ensure_ascii=False))
+        return 1
+
+    if ok:
+        plan["status"] = "sent"
+        plan["message_id"] = message_id
+        _save_plan(plan, plan_file)
+        print(json.dumps({"status": "sent", "message_id": message_id, "receiver_name": plan.get("receiver_name")},
+                         ensure_ascii=False))
+        return 0
+    else:
+        plan["status"] = "failed"
+        plan["last_result"] = out or err
+        _save_plan(plan, plan_file)
+        print(json.dumps({"status": "failed", "plan_id": args.plan_id}, ensure_ascii=False))
+        return 1
+
+
+def _mark(plan, plan_file, status):
+    plan["status"] = status
+    _save_plan(plan, plan_file)
+
+
+def main():
+    p = argparse.ArgumentParser(prog="feishu-send")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    prep = sub.add_parser("prepare")
+    prep.add_argument("--chat-id", default=None)
+    prep.add_argument("--user-id", default=None)
+    prep.add_argument("--identity", required=True)
+    prep.add_argument("--content-format", required=True)
+    prep.add_argument("--ttl", type=int, default=None)
+    prep.add_argument("--profile", default=None,
+                      help="lark-cli profile 名；不传则冻结当前 active profile 进计划")
+    prep.add_argument("--output", default="json", choices=["json"])
+    prep.set_defaults(fn=_cmd_prepare)
+    com = sub.add_parser("commit")
+    com.add_argument("--plan-id", required=True)
+    com.add_argument("--expect-digest", required=True)
+    com.add_argument("--output", default="json", choices=["json"])
+    com.set_defaults(fn=_cmd_commit)
+    a = p.parse_args()
+    sys.exit(a.fn(a) or 0)
+
+
+if __name__ == "__main__":
+    main()

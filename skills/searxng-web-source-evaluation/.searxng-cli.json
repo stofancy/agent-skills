@@ -1,0 +1,6 @@
+{
+  "owner": "SearXNG-cli",
+  "package": "<your-searxng-cli-package>",
+  "version": "0.1.0",
+  "skill": "searxng-web-source-evaluation"
+}
