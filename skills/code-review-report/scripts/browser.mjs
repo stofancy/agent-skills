@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { checkDocument, checkLayout } from './browser-checks.mjs';
+import { FONT_FAMILY } from './report-core.mjs';
 
 export async function launchBrowser() {
   const require = createRequire(resolve(process.cwd(), 'package.json'));
@@ -25,7 +26,7 @@ export async function inspectReport(browser, html, { screenshot = false } = {}) 
     if (errors.length) return { errors, warnings: [], blocked };
     await page.setContent(html, { waitUntil: 'load', timeout: 15000 });
     await page.evaluate(() => document.fonts.ready);
-    const result = await page.evaluate(checkLayout);
+    const result = await page.evaluate(checkLayout, { fontFamily: FONT_FAMILY });
     result.blocked = blocked;
     if (blocked.length) result.errors.push('Report attempted an external resource request/navigation');
     if (screenshot && !result.errors.length) {

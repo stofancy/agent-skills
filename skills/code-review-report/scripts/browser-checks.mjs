@@ -6,9 +6,10 @@ export function checkDocument(source) {
   const ids = new Set();
   const forbidden = new Set('script iframe frame frameset object embed base link form input button textarea select audio video source track animate animatemotion animatetransform set foreignobject template noscript'.split(' '));
   const raster = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i;
+  const bundledFont = /url\(\s*(['"]?)data:font\/woff2;base64,[a-z0-9+/=\s]+\1\s*\)/gi;
   const cssCheck = css => {
-    // Fragment paint servers/markers are local. Custom CSS remains otherwise free.
-    const rest = css.replace(/url\(\s*(['"]?)#[a-z0-9_.:-]+\1\s*\)/gi, '');
+    // Fragment paint servers/markers and the skill's own inlined woff2 are local. Other CSS stays free.
+    const rest = css.replace(/url\(\s*(['"]?)#[a-z0-9_.:-]+\1\s*\)/gi, '').replace(bundledFont, '');
     if (/@import\b|url\s*\(|image-set\s*\(|\\/i.test(rest)) errors.push('CSS must be self-contained; external URLs, imports and CSS escapes are not supported');
   };
   for (const el of doc.querySelectorAll('*')) {
@@ -44,7 +45,7 @@ export function checkDocument(source) {
   return [...new Set(errors)];
 }
 
-export function checkLayout() {
+export function checkLayout({ fontFamily } = {}) {
   const errors = [], warnings = [];
   const root = document.documentElement;
   const label = el => `${el.localName}${el.id ? '#' + el.id : ''}${el.classList?.length ? '.' + [...el.classList].join('.') : ''}`;
@@ -84,6 +85,33 @@ export function checkLayout() {
       const a = texts[i].getBoundingClientRect(), b = texts[j].getBoundingClientRect();
       if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2) errors.push('SVG text labels overlap');
     }
+  }
+  // The inlined font covers GB2312 hanzi and common symbols only; anything else falls back to the host, so
+  // the same report can produce different PNGs. document.fonts.check() also returns true for unknown
+  // families, so glyph coverage is decided by pixels: matching an absent family means the inlined font
+  // did not draw this character.
+  if (fontFamily) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 24;
+    const ctx = canvas.getContext('2d');
+    const signature = (char, family) => {
+      ctx.clearRect(0, 0, 24, 24);
+      ctx.font = `20px ${family}`;
+      ctx.fillText(char, 1, 20);
+      const alpha = ctx.getImageData(0, 0, 24, 24).data;
+      let hash = 0;
+      for (let i = 3; i < alpha.length; i += 4) hash = (hash * 31 + alpha[i]) | 0;
+      return hash;
+    };
+    const missing = new Set();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (const char of node.textContent) {
+        if (char.codePointAt(0) < 0x80 || /\s/.test(char) || missing.has(char)) continue;
+        if (signature(char, `"${fontFamily}"`) === signature(char, '"__report-absent-font__"')) missing.add(char);
+      }
+    }
+    if (missing.size) warnings.push(`Text outside the bundled font (PNG may differ across machines): ${[...missing].join('')}`);
   }
   const contentBottom = Math.max(document.body.getBoundingClientRect().bottom, ...[...document.body.querySelectorAll('*')].filter(visible).map(el => el.getBoundingClientRect().bottom));
   return { errors: [...new Set(errors)], warnings: [...new Set(warnings)], width: root.clientWidth, height: root.scrollHeight, contentHeight: Math.max(1, Math.ceil(contentBottom)), closedEvidence: document.querySelectorAll('details:not([open])').length };

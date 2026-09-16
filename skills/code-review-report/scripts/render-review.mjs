@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { assemble, escapeHTML as esc, baseCSS, distinctPaths, atomicWrite } from './report-core.mjs';
+import { assemble, escapeHTML as esc, baseCSS, distinctPaths, atomicWrite, hasCJK } from './report-core.mjs';
 
 const string = (v, path) => { if (typeof v !== 'string') throw new Error(`${path} must be a string`); return v; };
 const array = (v, path) => { if (!Array.isArray(v)) throw new Error(`${path} must be an array`); return v; };
@@ -87,7 +87,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     await distinctPaths([input, output]);
     const report = JSON.parse(await readFile(input, 'utf8'));
     const body = legacyBody(report);
-    await atomicWrite(output, assemble(body, report.meta.title, await baseCSS()));
+    await atomicWrite(output, assemble(body, report.meta.title, await baseCSS(hasCJK(body))));
     console.log(`Rendered legacy JSON: ${output}`);
   } catch (e) { console.error(e.message); process.exitCode = 1; }
 }

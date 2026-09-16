@@ -2,9 +2,24 @@ import { readFile, writeFile, rename, rm, realpath, stat } from 'node:fs/promise
 import { resolve, dirname, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export const CSP = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; object-src 'none'";
+export const CSP = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; object-src 'none'";
 export const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-export const baseCSS = () => readFile(new URL('../assets/report.css', import.meta.url), 'utf8');
+
+// The report must render the same PNG on machines without CJK fonts, so the font ships inlined instead
+// of coming from the host. Source: notofonts/noto-cjk Sans/SubsetOTF/SC/NotoSansSC-Regular.otf, cut with
+// pyftsubset to the GB2312 hanzi set (6763) plus Latin, punctuation, arrows and common symbols, ~1.1MB
+// woff2; license text in assets/OFL.txt. The family is aliased so a host copy cannot be mistaken for it.
+export const FONT_FAMILY = 'Report Sans SC';
+const FONT_URL = new URL('../assets/NotoSansSC-Regular.gb2312-subset.woff2', import.meta.url);
+export const hasCJK = text => /[\u3000-\u303F\u3040-\u30FF\u3400-\u9FFF\uFF00-\uFFEF]/.test(text);
+
+let fontCSS;
+const inlineFont = async () => fontCSS ??= `@font-face{font-family:"${FONT_FAMILY}";font-style:normal;font-weight:400;font-display:block;src:url(data:font/woff2;base64,${(await readFile(FONT_URL)).toString('base64')}) format("woff2")}`;
+
+export async function baseCSS(withFont = true) {
+  const css = await readFile(new URL('../assets/report.css', import.meta.url), 'utf8');
+  return withFont ? `${await inlineFont()}\n${css}` : css;
+}
 
 // These are authoring checks, NOT an HTML sanitizer. Browser checks are separate.
 export function assemble(body, title, css = '', lang = 'zh-CN') {

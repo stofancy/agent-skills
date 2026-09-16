@@ -67,6 +67,16 @@ test('assembly works from unrelated cwd and includes custom CSS', async t => {
   const run = cli('build-report.mjs', [src, out, '--title', 'test', '--css', css], { cwd: d });
   assert.equal(run.status, 0, run.stderr); assert.ok((await readFile(out, 'utf8')).includes('.test { color: black; }'));
 });
+test('CJK reports inline the bundled font, Latin-only reports stay small', async t => {
+  const d = await temp(t), cjk = join(d, 'cjk.body.html'), latin = join(d, 'latin.body.html'), a = join(d, 'a.html'), b = join(d, 'b.html');
+  await writeFile(cjk, '<main class="report"><p>取消确认后不再发布</p></main>');
+  await writeFile(latin, '<main class="report"><p>Cancellation stops publishing.</p></main>');
+  assert.equal(cli('build-report.mjs', [cjk, a, '--title', '中文']).status, 0);
+  assert.equal(cli('build-report.mjs', [latin, b, '--title', 'Latin']).status, 0);
+  const withFont = await readFile(a, 'utf8');
+  assert.ok(withFont.includes('font-src data:') && withFont.includes('data:font/woff2;base64,'));
+  assert.ok((await readFile(b, 'utf8')).length < withFont.length / 50);
+});
 test('invalid legacy input does not overwrite prior output', async t => {
   const d = await temp(t), src = join(d, 'input.json'), out = join(d, 'out.html');
   await writeFile(src, '{broken'); await writeFile(out, 'KEEP');

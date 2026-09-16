@@ -35,7 +35,7 @@ node "$SKILL_DIR/scripts/capture-report.mjs" "$REPORT_HTML" "$REPORT_PNG"
 node "$SKILL_DIR/scripts/capture-report.mjs" "$REPORT_HTML" --check
 ```
 
-也可以自主产出完整的单文件 HTML，直接使用检查/截图脚本；装配器不是必经之路。它仅便利地内联公共样式、标题、viewport 和内容安全策略。
+也可以自主产出完整的单文件 HTML，直接使用检查/截图脚本；装配器不是必经之路。它仅便利地内联公共样式、中日韩字体、标题、viewport 和内容安全策略。
 
 Node.js 18+；装配无需 npm 依赖。检查/截图需要已安装的 Playwright 与 Chromium；`PLAYWRIGHT_MODULE` 可指定已有模块入口，`CHROME_PATH` 可指定浏览器。缺项时使用当前 harness 已有浏览器能力或如实报告，禁止静默安装。
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
-import { assemble, baseCSS, distinctPaths, atomicWrite } from './report-core.mjs';
+import { assemble, baseCSS, distinctPaths, atomicWrite, hasCJK } from './report-core.mjs';
 
 try {
   const [input, output, ...args] = process.argv.slice(2);
@@ -13,7 +13,8 @@ try {
   await distinctPaths([input, output, options['--css']]);
   const body = await readFile(input, 'utf8');
   const custom = options['--css'] ? await readFile(options['--css'], 'utf8') : '';
-  const html = assemble(body, options['--title'], `${await baseCSS()}\n${custom}`, options['--lang']);
+  const needsFont = hasCJK(`${body}${options['--title']}${custom}`);
+  const html = assemble(body, options['--title'], `${await baseCSS(needsFont)}\n${custom}`, options['--lang']);
   await atomicWrite(output, html);
   console.log(`Built ${output}. Assembly only; browser and editorial checks are still required.`);
 } catch (e) {

@@ -44,6 +44,14 @@ browserTest('SVG overlapping labels detected', async () => {
   const r = await check('<svg viewBox="0 0 1000 100"><text x="10" y="30" font-size="20">first label</text><text x="15" y="30" font-size="20">second label</text></svg>');
   assert.ok(r.errors.includes('SVG text labels overlap'));
 });
+browserTest('bundled font covers Chinese text and stays silent', async () => {
+  const r = await check('<main class="report"><p>取消确认后不再发布结果，例如 worker 启动时只读取一次状态。</p></main>');
+  assert.deepEqual(r.errors, []); assert.deepEqual(r.warnings, []);
+});
+browserTest('flags text the bundled font cannot render', async () => {
+  const r = await inspectReport(browser, assemble('<main class="report"><p>取消确认后不再发布结果</p></main>', 'test', ''));
+  assert.ok(r.warnings.some(x => /outside the bundled font/.test(x)), JSON.stringify(r));
+});
 browserTest('closed evidence remains closed and is counted', async () => {
   const r = await check('<p>Important condition stays visible</p><details><summary>Evidence</summary><p>hidden details</p></details>');
   assert.equal(r.closedEvidence, 1); assert.deepEqual(r.errors, []);
@@ -55,6 +63,7 @@ for (const [name, body] of [
   ['embedded frame', '<iframe srcdoc="bad"></iframe>'], ['SVG animation', '<svg><set attributeName="href" to="bad"/></svg>'],
   ['CSS import', '<style>@import "https://example.invalid/a.css";</style>'],
   ['CSS remote URL', '<p style="background:url(https://example.invalid/a)">x</p>'],
+  ['CSS remote font', '<style>@font-face{font-family:"X";src:url(https://example.invalid/a.woff2)}</style>'],
   ['duplicate ids', '<p id="a">x</p><p id="a">y</p>'], ['missing anchor', '<a href="#absent">x</a>'],
 ]) browserTest(`rejects ${name} before capture`, async () => {
   const r = await check(body); assert.ok(r.errors.length > 0); assert.equal(r.png, undefined);
