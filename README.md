@@ -6,7 +6,7 @@
 
 本仓库只包含本机未登记外部来源、且经发布前脱敏审查的自建 Skill：
 
-- `code-review-report`：把已有 PR 审查证据组织成可读的桌面 HTML/PNG 报告。
+- `code-review-report`：把已有代码审查材料设计成便于 reviewer 理解机制、比较方案或作决定的桌面 HTML/PNG 报告。
 - `deploy-preflight`：通用发布预检、SSH 排障、备份流式验证与可逆生产 smoke。
 - `feishu-im-send`：Lark 消息的内容闸门、不可变发送计划、dry-run 与确认保护。
 - `results-first-persona`：结论优先、保留行动信息的协作沟通风格。
