@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Compatibility adapter for existing JSON callers. New reports should be authored.
+// 旧 JSON 调用方的兼容适配层；新报告应当直接创作 HTML。
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
@@ -37,7 +37,7 @@ export function legacyBody(report) {
   const actions = strings(report.closing.actions, 'closing.actions');
   const used = new Set();
   const reserve = id => { if (used.has(id)) throw new Error(`Duplicate normalized id: ${id}`); used.add(id); return id; };
-  // Reserve section IDs before allocating generated figure IDs.
+  // 先占住显式 section id，再分配自动生成的图注 id。
   const ids = sections.map((s, i) => {
     if (s?.id !== undefined) string(s.id, `sections[${i}].id`);
     return reserve((s?.id || '').trim().replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').toLowerCase() || `section-${i + 1}`);

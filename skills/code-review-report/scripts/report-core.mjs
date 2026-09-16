@@ -5,10 +5,10 @@ import { randomUUID } from 'node:crypto';
 export const CSP = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; object-src 'none'";
 export const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-// The report must render the same PNG on machines without CJK fonts, so the font ships inlined instead
-// of coming from the host. Source: notofonts/noto-cjk Sans/SubsetOTF/SC/NotoSansSC-Regular.otf, cut with
-// pyftsubset to the GB2312 hanzi set (6763) plus Latin, punctuation, arrows and common symbols, ~1.1MB
-// woff2; license text in assets/OFL.txt. The family is aliased so a host copy cannot be mistaken for it.
+// 报告要在没有中日韩字体的机器上渲染出同一张 PNG，所以字体随 skill 内联，而不是靠宿主系统。
+// 来源：notofonts/noto-cjk 的 Sans/SubsetOTF/SC/NotoSansSC-Regular.otf，用 pyftsubset 取 GB2312
+// 常用汉字（6763 字）加拉丁、标点、箭头与常用符号，woff2 约 1.1MB；许可全文见 assets/OFL.txt。
+// 族名用别名，免得与宿主安装的同名字体混为一谈。
 export const FONT_FAMILY = 'Report Sans SC';
 const FONT_URL = new URL('../assets/NotoSansSC-Regular.gb2312-subset.woff2', import.meta.url);
 export const hasCJK = text => /[\u3000-\u303F\u3040-\u30FF\u3400-\u9FFF\uFF00-\uFFEF]/.test(text);
@@ -21,7 +21,7 @@ export async function baseCSS(withFont = true) {
   return withFont ? `${await inlineFont()}\n${css}` : css;
 }
 
-// These are authoring checks, NOT an HTML sanitizer. Browser checks are separate.
+// 这些是创作期检查，不是 HTML 消毒器；浏览器检查另算。
 export function assemble(body, title, css = '', lang = 'zh-CN') {
   if (typeof body !== 'string' || !body.trim()) throw new Error('Report body must not be empty');
   if (typeof title !== 'string' || !title.trim()) throw new Error('Report title must not be empty');
@@ -30,7 +30,7 @@ export function assemble(body, title, css = '', lang = 'zh-CN') {
   return `<!doctype html>\n<html lang="${escapeHTML(lang)}">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${escapeHTML(CSP)}">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>${escapeHTML(title)}</title>\n<style>\n${css}\n</style>\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
 }
 
-// Check aliases as well as spelling. In particular, an output must not replace an input.
+// 别名和拼写都要查：尤其输出不得替换输入。
 export async function distinctPaths(paths) {
   const seen = new Set();
   for (const path of paths.filter(Boolean)) {

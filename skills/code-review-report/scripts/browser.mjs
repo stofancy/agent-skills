@@ -20,8 +20,7 @@ export async function inspectReport(browser, html, { screenshot = false } = {}) 
       blocked.push(route.request().url());
       await route.abort();
     });
-    // DOMParser is inert; audit before loading. In-memory content avoids file://,
-    // navigation permissions, listening sockets, and network access entirely.
+    // DOMParser 是惰性的，先审计再加载。内存内容完全避开 file://、导航权限、监听端口和网络访问。
     const errors = await page.evaluate(checkDocument, html);
     if (errors.length) return { errors, warnings: [], blocked };
     await page.setContent(html, { waitUntil: 'load', timeout: 15000 });
@@ -30,7 +29,7 @@ export async function inspectReport(browser, html, { screenshot = false } = {}) 
     result.blocked = blocked;
     if (blocked.length) result.errors.push('Report attempted an external resource request/navigation');
     if (screenshot && !result.errors.length) {
-      // Do not inflate short reports to the initial 1000px viewport. Keep authored padding.
+      // 短报告不要被初始 1000px 视口撑高，保留作者自己的留白。
       const area = result.contentHeight < 1000 ? { clip: { x: 0, y: 0, width: 1100, height: result.contentHeight } } : { fullPage: true };
       result.png = await page.screenshot({ ...area, type: 'png', animations: 'disabled' });
     }

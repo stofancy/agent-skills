@@ -1,4 +1,4 @@
-/* A visual foundation, not a catalogue of permitted report structures. */
+/* 视觉基础，不是允许出现的报告结构清单。 */
 :root {
   --bg:#f6f7fb; --paper:#fff; --ink:#202b3b; --muted:#596779; --line:#dde4ee;
   --blue:#2b629d; --purple:#6b50a5; --orange:#aa591f;
@@ -31,7 +31,7 @@ li + li { margin-top:5px; }
 .terms { margin:16px 0 0; }
 .term { padding-top:10px; border-top:2px solid var(--line); }
 dt { font-weight:700; } dd { margin:3px 0 0; }
-/* Entity colors identify objects; status colors always accompany explicit text. */
+/* 实体色用于标识对象；状态色始终与文字说明同时出现。 */
 .entity-a { --entity:var(--blue); --entity-soft:var(--blue-soft); }
 .entity-b { --entity:var(--purple); --entity-soft:var(--purple-soft); }
 .entity-c { --entity:var(--orange); --entity-soft:var(--orange-soft); }
@@ -52,7 +52,7 @@ figcaption { margin-top:10px; }
 details { margin:16px 0; border-top:1px solid var(--line); padding-top:10px; }
 summary { color:var(--blue); cursor:pointer; }
 footer { margin-top:32px; border-top:1px solid var(--line); padding-top:14px; color:var(--muted); font-size:14px; }
-/* Legacy JSON view only; its component choices do not constrain authored HTML. */
+/* 只有旧 JSON 视图用；它的组件选择不约束自由创作的 HTML。 */
 .flow-node { padding:14px; text-align:center; background:var(--blue-soft); border-radius:8px; }
 .flow-arrow { height:28px; text-align:center; }
 .flow-arrow::after { content:'↓'; }

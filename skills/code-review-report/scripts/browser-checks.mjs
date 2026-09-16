@@ -1,5 +1,5 @@
-// These functions execute in the browser, so keep them self-contained.
-// This is a static-report audit, not a general-purpose hostile-HTML sanitizer.
+// 这些函数在浏览器里执行，所以保持自包含。
+// 这是静态报告审计，不是通用的恶意 HTML 消毒器。
 export function checkDocument(source) {
   const doc = new DOMParser().parseFromString(source, 'text/html');
   const errors = [];
@@ -8,7 +8,7 @@ export function checkDocument(source) {
   const raster = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i;
   const bundledFont = /url\(\s*(['"]?)data:font\/woff2;base64,[a-z0-9+/=\s]+\1\s*\)/gi;
   const cssCheck = css => {
-    // Fragment paint servers/markers and the skill's own inlined woff2 are local. Other CSS stays free.
+    // 片段描绘服务器、标记，以及本 skill 自己内联的 woff2 都算本地资源；其余 CSS 不受限制。
     const rest = css.replace(/url\(\s*(['"]?)#[a-z0-9_.:-]+\1\s*\)/gi, '').replace(bundledFont, '');
     if (/@import\b|url\s*\(|image-set\s*\(|\\/i.test(rest)) errors.push('CSS must be self-contained; external URLs, imports and CSS escapes are not supported');
   };
@@ -31,7 +31,7 @@ export function checkDocument(source) {
         try {
           const url = new URL(value, 'https://report.invalid/');
           if (value && !/[\u0000-\u0020\\]/.test(value) && !value.startsWith('//') && ['http:', 'https:'].includes(url.protocol)) continue;
-        } catch { /* reported below */ }
+        } catch { /* 在下方统一报错 */ }
       }
       errors.push(`Nonlocal resource or unsafe link: ${tag}[${name}]`);
     }
@@ -86,10 +86,9 @@ export function checkLayout({ fontFamily } = {}) {
       if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2) errors.push('SVG text labels overlap');
     }
   }
-  // The inlined font covers GB2312 hanzi and common symbols only; anything else falls back to the host, so
-  // the same report can produce different PNGs. document.fonts.check() also returns true for unknown
-  // families, so glyph coverage is decided by pixels: matching an absent family means the inlined font
-  // did not draw this character.
+  // 内联字体只覆盖 GB2312 常用字与常见符号，其余字符会回退到宿主字体，同一份报告因此可能产出不同
+  // 的 PNG。document.fonts.check() 对未知族名同样返回 true，所以按像素判断：与不存在的族名渲染结果
+  // 相同，说明内联字体没有画出这个字。
   if (fontFamily) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 24;
