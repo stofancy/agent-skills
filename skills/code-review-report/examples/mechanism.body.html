@@ -1,0 +1,21 @@
+<main class="report">
+<header><p class="meta">设计示例 · 全部材料虚构 · 快照 fixture/v1</p><h1>取消任务，不等于阻止结果发布</h1><p>理解取消为何没有闭环：计算状态和发布许可是两件事。</p></header>
+<section class="lead"><p><strong>“已经点了取消”并不能证明“以后不会发布”。</strong>本例 worker 启动时只读取一次状态，之后仍可能把结果发布出去。决定边界在发布时，而不仅在开始时。</p><span class="status risk">示例审查结论：修复发布缺口后再合入</span></section>
+<div class="columns"><section class="panel entity entity-a"><h2 style="margin-top:0">计算状态</h2><p>worker 是否还在工作。停止计算可以节省资源，但不自动撤销已进入发布阶段的结果。</p></section><section class="panel entity entity-b"><h2 style="margin-top:0">发布许可</h2><p>结果现在能否对外可见。本例要求：取消确认之后，不得发生新的发布。</p></section></div>
+<section><h2>同一次任务里，取消发生在哪里？</h2><p>横轴表示先后，不表示耗时比例。下面是假设场景，不是生产观测；每一条泳道跟踪一个对象。</p>
+<figure class="panel"><svg viewBox="0 0 1000 320" role="img" aria-labelledby="timeline-title timeline-desc">
+<title id="timeline-title">取消后，旧执行路径仍继续发布</title><desc id="timeline-desc">启动时读取允许状态；期间用户确认取消；本例发布步骤不再次校验，因此仍发布。上下轨分别是 worker 和用户请求。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#596779"/></marker></defs>
+<text x="170" y="32" font-size="16">启动</text><text x="470" y="32" font-size="16">执行中</text><text x="790" y="32" font-size="16">发布时</text>
+<path d="M150 52 H950" fill="none" stroke="#596779" marker-end="url(#arrow)"/>
+<text x="15" y="115" font-size="16" fill="#2b629d">worker</text><text x="15" y="245" font-size="16" fill="#6b50a5">用户请求</text>
+<path d="M175 108 H880" stroke="#2b629d" stroke-width="3"/><path d="M175 238 H880" stroke="#6b50a5" stroke-width="3"/>
+<circle cx="195" cy="108" r="6" fill="#2b629d"/><text x="155" y="148" font-size="15">读取一次状态</text>
+<circle cx="500" cy="238" r="6" fill="#6b50a5"/><text x="425" y="278" font-size="15">取消已确认</text>
+<path d="M500 220 V70" stroke="#6b50a5" stroke-dasharray="5 5"/><text x="525" y="195" font-size="15" fill="#596779">没有进入发布判定</text>
+<circle cx="840" cy="108" r="6" fill="#a83737"/><text x="755" y="148" font-size="15" fill="#a83737">仍发布：确认缺口</text>
+</svg><figcaption>时间顺序说明缺口在哪里；修复方向是让发布操作受取消状态约束，而非只画一条“通知成功”的箭头。</figcaption></figure></section>
+<section><h2>需要改变的是发布边界</h2><table><thead><tr><th>场景</th><th>要求</th><th>本例已知实现</th></tr></thead><tbody><tr><td>正常完成</td><td>允许发布</td><td>发布结果</td></tr><tr><td>发布前取消已确认</td><td>不再发布</td><td>缺少发布时约束</td></tr><tr><td>取消前已经发布</td><td>本材料未定义</td><td>不推断自动撤回</td></tr></tbody></table><p class="note"><strong>修复方向：</strong>以原子条件控制发布。简单地在发布前读取一次状态，仍可能留下读取与发布之间的竞争窗口。</p></section>
+<details><summary>示例证据与边界</summary><p>E1：取消确认之后不得新发布。E2：worker 启动时读取一次。E3：发布不校验取消状态。E4：虚构复现记录为“取消后仍发布”。</p></details>
+<footer>本报告仅演示信息设计，未执行真实代码审查或测试。取消前已发布结果如何处理、停止计算的性能收益，均未验证。</footer>
+</main>

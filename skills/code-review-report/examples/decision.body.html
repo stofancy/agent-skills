@@ -1,0 +1,9 @@
+<main class="report">
+<header><p class="meta">设计示例 · 全部材料虚构 · 快照 fixture/v1</p><h1>先守住发布边界，再讨论如何省计算</h1></header>
+<p><span class="status risk">阻塞：取消后仍可能发布</span>　<span class="status pending">方案状态：建议，未完成验证</span></p>
+<table><thead><tr><th>同一项要求</th><th>A · 原子发布条件</th><th>B · 通知 worker 停止</th></tr></thead><tbody><tr><td>取消确认后不再新发布</td><td>直接约束发布操作</td><td>仅通知并不能保证发布已被阻止</td></tr><tr><td>尽早停止无用计算</td><td>不是此方案解决的问题</td><td>目标与此一致，效果未测量</td></tr><tr><td>证据边界</td><td>原子条件的实现和竞争测试待验证</td><td>通知时序和失败行为待验证</td></tr></tbody></table>
+<section class="lead"><p><strong>建议优先 A，但不把“建议”涂成“已经通过”。</strong>两种做法并非完全互斥：一个回答能否发布，另一个回答还要不要继续算。B 可以是后续优化，但不是 A 的证明。</p></section>
+<section><h2>不要把不同目标当成替代方案</h2><div class="columns"><article class="panel entity entity-b"><h3>本次必须守住</h3><p>取消确认之后的发布行为。把状态约束与发布放进同一原子操作，修复已确认缺口。</p><p class="meta">验收：取消与发布竞争时，仍满足约定。</p></article><article class="panel entity entity-a"><h3>后续可以优化</h3><p>在任务完成前通知 worker 停止，减少不必要的工作。不得把未测量的资源收益写成已确认效果。</p><p class="meta">验收：另行定义时延与资源指标。</p></article></div></section>
+<section><h2>本次决定</h2><p>保留“修复缺口后再合入”的示例审查判断。优先补原子发布条件及竞争测试；停止计算作为后续建议，不新增为当前合入门槛。</p><p class="note">产品仍需定义：取消前已经发布的结果是否需要撤回。这份材料没有给出答案。</p></section>
+<footer>依据：虚构 E1–E4 与方案说明 D1–D2，见 references/evaluation.md。未执行真实审查或测试；本页不能用作实际合入批准。</footer>
+</main>

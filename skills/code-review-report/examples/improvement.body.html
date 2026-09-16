@@ -1,0 +1,16 @@
+<main class="report">
+<header><p class="meta">设计示例 · 全部材料虚构 · 快照 fixture/v1</p><h1>把取消约束放在真正产生影响的位置</h1><p>主要修复获得完整解释；次要建议不与它争夺版面。</p></header>
+<section><h2>核心修复：让发布本身有条件</h2><p>前提不是“worker 一定立刻停止”，而是“取消确认后不能再新发布”。下面展示同一个请求约束在两种结构中的位置，不表示修复已执行。</p>
+<figure class="panel"><svg viewBox="0 0 1000 270" role="img" aria-labelledby="compare-title"><title id="compare-title">启动时检查与原子发布条件的结构对照</title>
+<rect x="10" y="10" width="470" height="245" rx="12" fill="#edf4fc"/><rect x="520" y="10" width="470" height="245" rx="12" fill="#f3effa"/>
+<text x="35" y="48" font-size="18" font-weight="700">当前：许可在开始时读取</text><text x="545" y="48" font-size="18" font-weight="700">建议：许可约束发布动作</text>
+<g data-node="start"><rect x="35" y="82" width="185" height="66" rx="8" fill="white" stroke="#2b629d"/><text x="55" y="122" font-size="16">读状态 → 计算</text></g>
+<path d="M230 115 H275" stroke="#596779" stroke-width="2"/><text x="288" y="122" font-size="16">直接发布</text>
+<text x="35" y="190" font-size="16" fill="#a83737">后来的取消，没有约束发布</text>
+<g data-node="publish"><rect x="550" y="82" width="405" height="90" rx="8" fill="white" stroke="#6b50a5"/><text x="575" y="118" font-size="16">未取消？与发布一起原子判定</text><text x="575" y="150" font-size="15" fill="#596779">条件不成立，就不对外发布</text></g>
+<text x="545" y="215" font-size="15" fill="#596779">原子性与竞争行为：仍需验证</text>
+</svg><figcaption>对照的是约束的位置；不是宣称一个普通的“先读再写”检查可以解决竞争。</figcaption></figure>
+<p><span class="status risk">必须修复</span> 本例 E4 已确认取消后仍发布；合入判断仍为“修复后再合入”。</p></section>
+<section><h2>次要建议：各自保留边界</h2><div class="columns"><article class="panel"><h3>停止计算通知</h3><p>可作为资源优化；时延和收益尚未测量，不替代发布约束，也不追加为当前阻塞。</p></article><article class="panel"><h3>已发布结果的处置</h3><p>这是材料未定义的产品问题。明确记录待决定，不擅自画成“取消后自动撤回”。</p></article></div></section>
+<footer>全部内容为虚构设计样例。依据 E1–E4、D1–D2；未执行真实代码审查、修复或测试。</footer>
+</main>

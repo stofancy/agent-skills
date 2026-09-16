@@ -1,0 +1,7 @@
+<main class="report" style="max-width:900px">
+<header><p class="meta">极简设计示例 · 全部材料虚构 · 快照 fixture/v1</p><h1>取消确认后，仍可能发布结果</h1></header>
+<p><span class="status risk">示例阻塞项</span> worker 只在启动时读取状态，发布时不再受取消约束。虚构复现 E4 显示取消确认之后仍发生发布。</p>
+<p><strong>修复方向：</strong>把未取消条件与发布放入同一原子操作，补取消与发布的竞争测试。仅在发布前读一次状态不足以证明问题已解决。</p>
+<p><strong>判断与边界：</strong>修复后再合入。停止计算只是后续优化；取消前已发布结果是否撤回，材料未定义。</p>
+<footer>依据虚构 E1–E4、D1–D2。没有真实 PR、生产观测或测试执行记录。简单发现不需要图册。</footer>
+</main>
