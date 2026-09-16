@@ -30,3 +30,5 @@
 ## 许可证
 
 本仓库中原创内容采用 [MIT License](LICENSE)。外部工具、服务和品牌名称归其各自权利人所有。
+
+`code-review-report` 内嵌 Noto Sans SC 子集（常用汉字，© 2014-2021 Adobe，SIL Open Font License 1.1），许可全文见 `skills/code-review-report/assets/OFL.txt`。
