@@ -14,7 +14,7 @@ try {
   const result = await inspectReport(browser, html, { screenshot: !checkOnly });
   const { png, ...diagnostics } = result;
   console.log(JSON.stringify(diagnostics, null, 2));
-  if (result.errors.length) throw new Error('Report checks failed; existing output was not changed');
+  if (result.errors.length) throw new Error(`Report checks failed (${result.errors.length}): ${result.errors.join('; ')}; no output was written`);
   if (png) await atomicWrite(output, png);
   console.log(checkOnly ? 'Mechanical checks passed; editorial/visual review remains required.' : `Captured ${output}; inspect the image before delivery.`);
 } catch (e) {

@@ -44,6 +44,16 @@ browserTest('SVG overlapping labels detected', async () => {
   const r = await check('<svg viewBox="0 0 1000 100"><text x="10" y="30" font-size="20">first label</text><text x="15" y="30" font-size="20">second label</text></svg>');
   assert.ok(r.errors.includes('SVG text labels overlap'));
 });
+// 旋转/缩放过的文字，其轴对齐外接矩形会被放大，导致相邻但不接触的标签被判成重叠。
+const rotated = (offset) => `<svg viewBox="0 0 900 400" width="900" height="400"><text x="250" y="300" font-size="14" transform="rotate(-45 250 300)">alpha label one two three four five</text><g transform="translate(${offset},${offset})"><text x="250" y="300" font-size="14" transform="rotate(-45 250 300)">bravo label one two three four five</text></g></svg>`;
+browserTest('rotated labels that do not touch are not reported as overlapping', async () => {
+  const r = await check(rotated(28));
+  assert.ok(!r.errors.includes('SVG text labels overlap'), JSON.stringify(r));
+});
+browserTest('rotation does not hide a real label overlap', async () => {
+  const r = await check(rotated(4));
+  assert.ok(r.errors.includes('SVG text labels overlap'), JSON.stringify(r));
+});
 browserTest('bundled font covers Chinese text and stays silent', async () => {
   const r = await check('<main class="report"><p>取消确认后不再发布结果，例如 worker 启动时只读取一次状态。</p></main>');
   assert.deepEqual(r.errors, []); assert.deepEqual(r.warnings, []);

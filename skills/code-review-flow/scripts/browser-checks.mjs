@@ -45,6 +45,33 @@ export function checkDocument(source) {
   return [...new Set(errors)];
 }
 
+// SVG 内容常被旋转、缩放：getBoundingClientRect() 给的是轴对齐外接矩形，旋转 45° 后会被放大两三倍，
+// 于是"相邻但不接触"的两个标签会被判成重叠、贴边的文字会被判成越界。改成取元素自身几何框
+// (getBBox) 经 getScreenCTM() 变换后的有向四边形，再做分离轴测试与点内判定。
+const orientedQuad = el => {
+  const box = el?.getBBox?.(), m = el?.getScreenCTM?.();
+  if (!box || !m || !box.width || !box.height) return null;
+  return [[box.x, box.y], [box.x + box.width, box.y], [box.x + box.width, box.y + box.height], [box.x, box.y + box.height]]
+    .map(([x, y]) => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f }));
+};
+const rectQuad = r => [{ x: r.left, y: r.top }, { x: r.right, y: r.top }, { x: r.right, y: r.bottom }, { x: r.left, y: r.bottom }];
+const axesOf = q => [0, 1].map(i => { const p = q[i], n = q[(i + 1) % 4]; return { x: -(n.y - p.y), y: n.x - p.x }; });
+const projected = (q, ax) => q.map(p => p.x * ax.x + p.y * ax.y);
+// 分离轴测试返回最小重叠深度；<= 0 表示两个四边形不相交。
+const overlapDepth = (a, b) => Math.min(...[...axesOf(a), ...axesOf(b)].map(ax => {
+  const pa = projected(a, ax), pb = projected(b, ax);
+  return Math.min(Math.max(...pa), Math.max(...pb)) - Math.max(Math.min(...pa), Math.min(...pb));
+}));
+// 凸四边形包含判定：inner 的四角都在 outer 内（tol 像素容差）。四角按 (x,y)→(x+w,y)→(x+w,y+h)→(x,y+h)
+// 排列时，内侧点的叉积为正，所以越界项是"叉积 < -tol"。
+const covers = (outer, inner, tol) => {
+  const edges = outer.map((p, i) => [p, outer[(i + 1) % 4]]);
+  return inner.every(pt => edges.every(([p, n]) => {
+    const ex = n.x - p.x, ey = n.y - p.y, len = Math.hypot(ex, ey) || 1;
+    return (ex * (pt.y - p.y) - ey * (pt.x - p.x)) / len >= -tol;
+  }));
+};
+
 export function checkLayout({ fontFamily } = {}) {
   const errors = [], warnings = [];
   const root = document.documentElement;
@@ -69,21 +96,18 @@ export function checkLayout({ fontFamily } = {}) {
     }
   }
   for (const svg of document.querySelectorAll('svg')) {
-    const bounds = svg.getBoundingClientRect();
     const texts = [...svg.querySelectorAll('text')].filter(visible);
+    const svgQuad = rectQuad(svg.getBoundingClientRect());
     for (const text of texts) {
-      const b = text.getBoundingClientRect(), m = text.getScreenCTM();
-      if (b.left < bounds.left - 2 || b.right > bounds.right + 2 || b.top < bounds.top - 2 || b.bottom > bounds.bottom + 2) errors.push('SVG text exceeds viewport');
+      const q = orientedQuad(text), m = text.getScreenCTM();
+      if (q && !covers(svgQuad, q, 2)) errors.push('SVG text exceeds viewport');
       if (m && parseFloat(getComputedStyle(text).fontSize) * Math.hypot(m.a, m.b) < 13) warnings.push('SVG text renders below 13px');
       const group = text.closest('[data-node]'), rect = group?.querySelector('rect');
-      if (rect) {
-        const r = rect.getBoundingClientRect();
-        if (b.left < r.left - 2 || b.right > r.right + 2 || b.top < r.top - 2 || b.bottom > r.bottom + 2) errors.push('SVG text exceeds data-node box');
-      }
+      if (q && rect && !covers(orientedQuad(rect), q, 2)) errors.push('SVG text exceeds data-node box');
     }
     for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
-      const a = texts[i].getBoundingClientRect(), b = texts[j].getBoundingClientRect();
-      if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2) errors.push('SVG text labels overlap');
+      const a = orientedQuad(texts[i]), b = orientedQuad(texts[j]);
+      if (a && b && overlapDepth(a, b) > 1) errors.push('SVG text labels overlap');
     }
   }
   // 内联字体只覆盖 GB2312 常用字与常见符号，其余字符会回退到宿主字体，同一份报告因此可能产出不同
