@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { assemble, baseCSS, distinctPaths, atomicWrite } from '../scripts/report-core.mjs';
 import { legacyBody, safeHref } from '../scripts/render-review.mjs';
+import { checkProducts, checkUnderstanding, checkFindings } from '../scripts/check-markdown.mjs';
 
 const skill = fileURLToPath(new URL('..', import.meta.url));
 const contract = await readFile(new URL('../references/report-input.md', import.meta.url), 'utf8');
@@ -102,4 +103,47 @@ test('missing browser dependency is explicit and preserves PNG', async t => {
 test('atomic output write and complete movable CSS resource', async t => {
   const d = await temp(t), p = join(d, 'out'); await atomicWrite(p, 'complete');
   assert.equal(await readFile(p, 'utf8'), 'complete'); assert.ok((await baseCSS()).includes('overflow-wrap:anywhere'));
+});
+
+// —— 两份 Markdown 产物的机械检查 ——
+const understanding = (extra = '') => `# repo#1 · 标题（head abc1234）
+
+## 1. 原始需求（原文，不转述）
+> 卡里的原句
+## 2. 需求落点
+| 需求 | 落点 | 证据 |
+|---|---|---|
+| 传字段 | a.ts:41 | [读过] |
+## 3. 变更地图
+| 事实 | 内容 | 来源 |
+|---|---|---|
+| 覆盖范围 | 工程内、非测试 | [跑过] |
+| 未查方向 | 跨仓 | — |
+${extra}`;
+const findings = (rows = '| 1 | 那条结论 | 重要 | 重新生成客户端 | [读过] | 工程内、非测试调用点 | 若出现消费方即不成立 | a.ts:41 |') => `# repo#1 · 标题（head abc1234）
+
+| # | 结论 | 严重度 | 行动 | 证据 | 覆盖范围 | 证伪条件 | 依据 |
+|---|---|---|---|---|---|---|---|
+${rows}
+
+## 验证边界
+- 未跑构建`;
+
+test('markdown products pass when ownership and required fields hold', () => {
+  const { ok, report } = checkProducts({ understanding: understanding(), findings: findings() });
+  assert.deepEqual(report, { understanding: [], findings: [] }); assert.equal(ok, true);
+});
+test('understanding rejects verdict words but tolerates quoted source text', () => {
+  assert.match(checkUnderstanding(understanding('- 这不阻塞合入')).join(), /阻塞合入/);
+  assert.deepEqual(checkUnderstanding(understanding('> 卡里写着「严重度：高」')), []);
+  assert.match(checkUnderstanding(understanding().replace('| 未查方向 | 跨仓 | — |', '')).join(), /未查方向/);
+});
+test('findings requires coverage and falsification columns instead of a confidence column', () => {
+  assert.match(checkFindings(findings('| 1 | 那条结论 | 高 | a.ts:41 |')).join(), /证伪条件/);
+  assert.match(checkFindings(findings('| 1 | 那条结论 | 重要 | 无需动作 | 未标注 | 工程内 | 若出现消费方即不成立 | a.ts:41 |')).join(), /缺证据标记/);
+  assert.match(checkFindings(findings('| 1 | 那条结论 | 高风险 | 重新生成 | [读过] | 工程内 | 若出现消费方即不成立 | a.ts:41 |')).join(), /严重度取值非法/);
+});
+test('findings rejects mechanism diagrams and ledger without a blocking column', () => {
+  assert.match(checkFindings(findings() + '\n```text\nA → B\n```').join(), /链路图/);
+  assert.match(checkFindings(findings() + '\n| # | 问句 | 挂在 |\n|---|---|---|\n| 1 | 是这样吗 | 结论 1 |').join(), /阻塞/);
 });
