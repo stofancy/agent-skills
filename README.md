@@ -6,7 +6,7 @@
 
 本仓库只包含本机未登记外部来源、且经发布前脱敏审查的自建 Skill：
 
-- `code-review-report`：把已有代码审查材料设计成便于 reviewer 理解机制、比较方案或作决定的桌面 HTML/PNG 报告。
+- `code-review-flow`：代码评审流程——先冷启动理解 PR（需求对应、变更地图、为什么、边界与风险），再产出带证据与置信度的结论，最后按需把结论交付给作者；HTML/PNG 是可选载体。
 - `deploy-preflight`：通用发布预检、SSH 排障、备份流式验证与可逆生产 smoke。
 - `feishu-im-send`：Lark 消息的内容闸门、不可变发送计划、dry-run 与确认保护。
 - `results-first-persona`：结论优先、保留行动信息的协作沟通风格。
@@ -23,6 +23,7 @@
 ## 配置与安全
 
 - 不提交 token、Cookie、API key、用户/群组 ID、profile 名、私有地址或本地运行记录。
+- **提交前跑 `scripts/leak-check.sh`**（`scripts/leak-check.sh <rev>` 可检查某个提交）：命中组织/项目标识、内部服务名、本地绝对路径、私有知识库路径、真实工单号与测试计数、凭据与身份中任意一条即失败。先改写成通用表述或占位符，再提交。
 - `feishu-im-send` 的 profile、身份和收件人需由使用者在安全配置中维护，并在执行时显式提供。
 - SearXNG Skill 的 `.searxng-cli.json` 使用占位 package 名；替换为你的 CLI 包或按你的运行时规范删除该元数据。
 - `team-lead` 仅保留 harness 中立的控制面；组织专用模型路由和外部执行器适配器不随仓库发布。
